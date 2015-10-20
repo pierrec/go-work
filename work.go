@@ -167,6 +167,7 @@ func Do(n int, worker, finalizer func(idx int)) {
 
 	// done when all go routines are
 	wg.Wait()
+	close(workc)
 
 	return
 }
