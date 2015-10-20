@@ -15,7 +15,7 @@ func init() {
 	NumRoutines = runtime.GOMAXPROCS(0)
 }
 
-// do spawns workers with index 0 to n, limiting their numbers by NumRoutines.
+// do spawns workers with index 0 to n-1, limiting their numbers by NumRoutines.
 func do(n int, worker func(int)) {
 	var wg sync.WaitGroup
 	if n <= NumRoutines {
@@ -44,7 +44,7 @@ func do(n int, worker func(int)) {
 	wg.Wait()
 }
 
-// doWithError spawns workers with index 0 to n, limiting their numbers by NumRoutines.
+// doWithError spawns workers with index 0 to n-1, limiting their numbers by NumRoutines.
 // Similar to do but with error handling.
 // The first error encountered aborts all processing and is then returned.
 func doWithError(n int, worker func(int) error) error {
@@ -95,7 +95,7 @@ func doWithError(n int, worker func(int) error) error {
 	return nil
 }
 
-// Do spawns workers with index 0 to n, limiting their numbers by NumRoutines.
+// Do spawns workers with index 0 to n-1, limiting their numbers by NumRoutines.
 // If finalizer is set, then it is called on the processed items, in increasing index order.
 func Do(n int, worker, finalizer func(idx int)) {
 	switch n {
@@ -171,7 +171,7 @@ func Do(n int, worker, finalizer func(idx int)) {
 	return
 }
 
-// DoWithError spawns workers with index 0 to n, limiting their numbers by NumRoutines.
+// DoWithError spawns workers with index 0 to n-1, limiting their numbers by NumRoutines.
 // Similar to Do but with error handling.
 // The first error encountered aborts all processing and is then returned.
 // If finalizer is set, then it is called on the processed items, in increasing index order.
