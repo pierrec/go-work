@@ -115,16 +115,16 @@ func Do(n int, worker, finalizer func(idx int)) {
 	}
 
 	var (
-		donec = make(chan struct{}, NumRoutines) // worker throttling
-		workc = make(chan int)                   // results from workers
-		wg    sync.WaitGroup
+		donec   = make(chan struct{}, NumRoutines) // worker throttling
+		workc   = make(chan int)                   // results from workers
+		wg, wgf sync.WaitGroup
 	)
 
 	// initialize the go routine managing the results and
 	// dispatching to the finalizer in order
-	wg.Add(1)
+	wgf.Add(1)
 	go func() {
-		defer wg.Done()
+		defer wgf.Done()
 		// buffer holds results that cannot be finalized yet.
 		buffer := make(map[int]struct{})
 		pos := 0
@@ -168,6 +168,7 @@ func Do(n int, worker, finalizer func(idx int)) {
 	// done when all go routines are
 	wg.Wait()
 	close(workc)
+	wgf.Wait()
 
 	return
 }
