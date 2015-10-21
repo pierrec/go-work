@@ -7,18 +7,17 @@ import (
 	"sync/atomic"
 )
 
-// NumRoutines defines the maximum number of goroutines to be used per helper.
-// It defaults to GOMAXPROCS.
-var NumRoutines int
+// numRoutines defines the default maximum number of goroutines based on GOMAXPROCS.
+var numRoutines int
 
 func init() {
-	NumRoutines = runtime.GOMAXPROCS(0)
+	numRoutines = runtime.GOMAXPROCS(0)
 }
 
-// do spawns workers with index 0 to n-1, limiting their numbers by NumRoutines.
-func do(n int, worker func(int)) {
+// do spawns workers with index 0 to n-1, limiting their numbers by max.
+func do(n int, worker func(int), max int) {
 	var wg sync.WaitGroup
-	if n <= NumRoutines {
+	if n <= max {
 		// spawn as many goroutines as number of workers
 		wg.Add(n)
 		for i := 0; i < n; i++ {
@@ -32,10 +31,10 @@ func do(n int, worker func(int)) {
 	}
 
 	// spawn the maximum number of goroutines
-	wg.Add(NumRoutines)
-	for i := 0; i < NumRoutines; i++ {
+	wg.Add(max)
+	for i := 0; i < max; i++ {
 		go func(idx int) {
-			for ; idx < n; idx += NumRoutines {
+			for ; idx < n; idx += max {
 				worker(idx)
 			}
 			wg.Done()
@@ -44,16 +43,16 @@ func do(n int, worker func(int)) {
 	wg.Wait()
 }
 
-// doWithError spawns workers with index 0 to n-1, limiting their numbers by NumRoutines.
+// doWithError spawns workers with index 0 to n-1, limiting their numbers by max.
 // Similar to do but with error handling.
 // The first error encountered aborts all processing and is then returned.
-func doWithError(n int, worker func(int) error) error {
+func doWithError(n int, worker func(int) error, max int) error {
 	var (
 		errv atomic.Value // worker error
 		wg   sync.WaitGroup
 	)
 
-	if n <= NumRoutines {
+	if n <= max {
 		// spawn as many goroutines as number of workers
 		wg.Add(n)
 		for i := 0; i < n; i++ {
@@ -75,10 +74,10 @@ func doWithError(n int, worker func(int) error) error {
 	}
 
 	// spawn the maximum number of goroutines
-	wg.Add(NumRoutines)
-	for i := 0; i < NumRoutines; i++ {
+	wg.Add(max)
+	for i := 0; i < max; i++ {
 		go func(idx int) {
-			for ; idx < n && errv.Load() == nil; idx += NumRoutines {
+			for ; idx < n && errv.Load() == nil; idx += max {
 				if err := worker(idx); err != nil {
 					errv.Store(err)
 					break
@@ -95,9 +94,15 @@ func doWithError(n int, worker func(int) error) error {
 	return nil
 }
 
-// Do spawns workers with index 0 to n-1, limiting their numbers by NumRoutines.
+// Do spawns workers with index 0 to n-1, limiting their numbers by GOMAXPROCS.
 // If finalizer is set, then it is called on the processed items, in increasing index order.
 func Do(n int, worker, finalizer func(idx int)) {
+	DoN(n, worker, finalizer, numRoutines)
+}
+
+// DoN spawns workers with index 0 to n-1, limiting their numbers by max.
+// If finalizer is set, then it is called on the processed items, in increasing index order.
+func DoN(n int, worker, finalizer func(idx int), max int) {
 	switch n {
 	case 0:
 		return
@@ -110,13 +115,13 @@ func Do(n int, worker, finalizer func(idx int)) {
 	}
 
 	if finalizer == nil {
-		do(n, worker)
+		do(n, worker, max)
 		return
 	}
 
 	var (
-		donec   = make(chan struct{}, NumRoutines) // worker throttling
-		workc   = make(chan int)                   // results from workers
+		donec   = make(chan struct{}, max) // worker throttling
+		workc   = make(chan int)           // results from workers
 		wg, wgf sync.WaitGroup
 	)
 
@@ -152,7 +157,7 @@ func Do(n int, worker, finalizer func(idx int)) {
 		}
 	}()
 
-	// process all items in the list, with a concurrency of NumRoutines
+	// process all items in the list, with a concurrency of max
 	for i := 0; i < n; i++ {
 		wg.Add(1)
 		go func(idx int) {
@@ -173,11 +178,19 @@ func Do(n int, worker, finalizer func(idx int)) {
 	return
 }
 
-// DoWithError spawns workers with index 0 to n-1, limiting their numbers by NumRoutines.
+// DoWithError spawns workers with index 0 to n-1, limiting their numbers by max.
 // Similar to Do but with error handling.
 // The first error encountered aborts all processing and is then returned.
 // If finalizer is set, then it is called on the processed items, in increasing index order.
 func DoWithError(n int, worker, finalizer func(idx int) error) error {
+	return DoNWithError(n, worker, finalizer, numRoutines)
+}
+
+// DoNWithError spawns workers with index 0 to n-1, limiting their numbers by GOMAXPROCS.
+// Similar to DoN but with error handling.
+// The first error encountered aborts all processing and is then returned.
+// If finalizer is set, then it is called on the processed items, in increasing index order.
+func DoNWithError(n int, worker, finalizer func(idx int) error, max int) error {
 	switch n {
 	case 0:
 		return nil
@@ -192,13 +205,13 @@ func DoWithError(n int, worker, finalizer func(idx int) error) error {
 	}
 
 	if finalizer == nil {
-		return doWithError(n, worker)
+		return doWithError(n, worker, max)
 	}
 
 	var (
-		errv    atomic.Value                       // worker/finalizer error
-		donec   = make(chan struct{}, NumRoutines) // worker done channel
-		workc   = make(chan int)                   // results from workers
+		errv    atomic.Value               // worker/finalizer error
+		donec   = make(chan struct{}, max) // worker done channel
+		workc   = make(chan int)           // results from workers
 		wg, wgf sync.WaitGroup
 	)
 
@@ -248,7 +261,7 @@ func DoWithError(n int, worker, finalizer func(idx int) error) error {
 		wgf.Done()
 	}()
 
-	// process all items in the list, with a concurrency of NumRoutines
+	// process all items in the list, with a concurrency of max
 	for i := 0; i < n; i++ {
 		wg.Add(1)
 		go func(idx int) {
