@@ -134,24 +134,14 @@ func DoN(n int, worker, finalizer func(idx int), max int) {
 		buffer := make(map[int]struct{})
 		pos := 0
 		for idx := range workc {
-			if pos < idx {
-				// out of order result
-				buffer[idx] = struct{}{}
-				continue
-			}
-			finalizer(idx)
+			buffer[idx] = struct{}{}
 			// process the results that were already received
 			// ensuring they are processed in order
-			for {
-				pos++
-				if pos == n {
-					return
-				}
+			for ; ; pos++ {
 				if _, ok := buffer[pos]; !ok {
 					// no more result for the current position
 					break
 				}
-				delete(buffer, pos)
 				finalizer(pos)
 			}
 		}
@@ -226,32 +216,14 @@ func DoNWithError(n int, worker, finalizer func(idx int) error, max int) error {
 		// the finalizer routine exits when the channel is closed
 		// or when it has completed all work
 		for idx := range workc {
-			if errv.Load() != nil {
-				// upon error, wait for the workers to complete
-				// which will close the channel
-				continue
-			}
-			if pos < idx {
-				// out of order result
-				buffer[idx] = struct{}{}
-				continue
-			}
-			if err := finalizer(pos); err != nil {
-				errv.Store(err)
-				continue
-			}
+			buffer[idx] = struct{}{}
 			// process the results that were already received
 			// ensuring they are processed in order
-			for {
-				pos++
-				if pos == n || errv.Load() != nil {
-					break
-				}
+			for ; errv.Load() == nil; pos++ {
 				if _, ok := buffer[pos]; !ok {
 					// no more result for the current position
 					break
 				}
-				delete(buffer, pos)
 				if err := finalizer(pos); err != nil {
 					errv.Store(err)
 					break
